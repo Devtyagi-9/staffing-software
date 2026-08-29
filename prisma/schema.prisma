@@ -1,0 +1,506 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Agency {
+  id               String   @id @default(uuid())
+  name             String
+  default_currency String   @default("AUD")
+  created_at       DateTime @default(now())
+
+  payers         Payer[]
+  workers        Worker[]
+  users          User[]
+  audit_logs     AuditLog[]
+  invoices       Invoice[]
+  labor_config   LaborConfig?
+  worker_roles   WorkerRole[]
+  funding_types  FundingType[]
+}
+
+model Payer {
+  id                 String   @id @default(uuid())
+  agency_id          String
+  name               String
+  contract_terms     String   @default("{}") // JSON string
+  payment_terms_days Int      @default(30)
+
+  // Billing contact details
+  billing_email      String?
+  billing_phone      String?
+  billing_address    String?
+  abn                String?  // Australian Business Number
+
+  created_at         DateTime @default(now())
+
+  agency     Agency     @relation(fields: [agency_id], references: [id], onDelete: Cascade)
+  clients    Client[]
+  bill_rates BillRate[]
+  invoices   Invoice[]
+
+  @@index([agency_id])
+}
+
+model Client {
+  id              String   @id @default(uuid())
+  payer_id        String
+  name            String
+  preferred_name  String?
+  address_line    String
+  lat             Float    @default(0)
+  lng             Float    @default(0)
+  timezone        String   @default("Australia/Sydney") // IANA string
+
+  // Participant profile
+  phone           String?
+  gender          String?  // male, female, non_binary, prefer_not_to_say
+  date_of_birth   String?  // YYYY-MM-DD
+
+  // Next of kin
+  next_of_kin_name     String?
+  next_of_kin_phone    String?
+  next_of_kin_relation String?
+
+  // Funding
+  funding_type_id String?
+
+  // Notes / preferences around workers
+  notes           String?
+
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  payer                 Payer                @relation(fields: [payer_id], references: [id], onDelete: Cascade)
+  funding_type          FundingType?         @relation(fields: [funding_type_id], references: [id], onDelete: SetNull)
+  requirement_templates RequirementTemplate[]
+  client_requirements   ClientRequirement[]
+  bill_rates            BillRate[]
+  invoice_line_items    InvoiceLineItem[]
+
+  @@index([payer_id])
+  @@index([funding_type_id])
+}
+
+model FundingType {
+  id         String   @id @default(uuid())
+  agency_id  String
+  name       String   // e.g. "NDIS", "Support at Home"
+  created_at DateTime @default(now())
+
+  agency  Agency   @relation(fields: [agency_id], references: [id], onDelete: Cascade)
+  clients Client[]
+
+  @@unique([agency_id, name])
+  @@index([agency_id])
+}
+
+model Worker {
+  id              String   @id @default(uuid())
+  agency_id       String
+  name            String
+  preferred_name  String?
+  email           String
+  phone           String
+  home_lat        Float    @default(0)
+  home_lng        Float    @default(0)
+  address         String?
+  date_of_birth   String?  // YYYY-MM-DD
+  gender          String?  // male, female, non_binary, prefer_not_to_say
+  ethnicity       String?
+  languages       String?  // JSON string: ["English","Hindi"]
+
+  // Next of kin
+  next_of_kin_name     String?
+  next_of_kin_phone    String?
+  next_of_kin_relation String?
+
+  // Role & Case Manager
+  role_id          String?
+  case_manager_id  String?
+
+  // Notes
+  worker_notes     String?  // visible to rostering team
+  admin_notes      String?  // admin-only, audit-facing
+
+  // Engagement
+  engagement_start_date  String?  // YYYY-MM-DD
+  engagement_end_date    String?  // YYYY-MM-DD
+  dont_rehire            Boolean  @default(false)
+  engagement_notes       String?
+
+  status     String   @default("active") // active, inactive
+  created_at DateTime @default(now())
+
+  agency             Agency               @relation(fields: [agency_id], references: [id], onDelete: Cascade)
+  role               WorkerRole?          @relation(fields: [role_id], references: [id], onDelete: SetNull)
+  case_manager       User?                @relation("CaseManagerWorkers", fields: [case_manager_id], references: [id], onDelete: SetNull)
+  worker_skills      WorkerSkill[]
+  availabilities     WorkerAvailability[]
+  wage_rates         WageRate[]
+  assignments        Assignment[]
+  linked_users       User[]               @relation("LinkedWorker")
+  invoice_line_items InvoiceLineItem[]
+  documents          WorkerDocument[]
+  incidents          WorkerIncident[]
+
+  @@index([agency_id])
+  @@index([case_manager_id])
+}
+
+model WorkerRole {
+  id          String   @id @default(uuid())
+  agency_id   String
+  name        String
+  description String?
+  created_at  DateTime @default(now())
+
+  agency  Agency   @relation(fields: [agency_id], references: [id], onDelete: Cascade)
+  workers Worker[]
+
+  @@unique([agency_id, name])
+  @@index([agency_id])
+}
+
+model WorkerDocument {
+  id            String   @id @default(uuid())
+  worker_id     String
+  name          String   // Display name e.g. "Police Check"
+  doc_type      String   @default("other") // certificate, compliance, identity, other
+  file_path     String?  // relative path on disk: uploads/<worker_id>/<filename>
+  file_name     String?  // stored filename (uuid-based)
+  original_name String?  // original uploaded filename
+  mime_type     String?
+  file_size     Int?
+  expiry_date   String?  // YYYY-MM-DD
+  uploaded_at   DateTime @default(now())
+  uploaded_by   String?
+
+  worker   Worker @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+  uploader User?  @relation("DocumentUploader", fields: [uploaded_by], references: [id], onDelete: SetNull)
+
+  @@index([worker_id])
+}
+
+model WorkerIncident {
+  id            String   @id @default(uuid())
+  worker_id     String
+  title         String
+  description   String?
+  incident_date String   // YYYY-MM-DD
+  severity      String   @default("low") // low, medium, high, critical
+  file_path     String?
+  file_name     String?
+  original_name String?
+  mime_type     String?
+  created_at    DateTime @default(now())
+  created_by    String?
+
+  worker  Worker @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+  creator User?  @relation("IncidentCreator", fields: [created_by], references: [id], onDelete: SetNull)
+
+  @@index([worker_id])
+}
+
+model Skill {
+  id       String  @id @default(uuid())
+  name     String  @unique
+  category String?
+
+  worker_skills      WorkerSkill[]
+  requirement_skills RequirementSkill[]
+  bill_rates         BillRate[]
+}
+
+model WorkerSkill {
+  id           String    @id @default(uuid())
+  worker_id    String
+  skill_id     String
+  certified_at DateTime  @default(now())
+  expires_at   DateTime?
+
+  worker Worker @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+  skill  Skill  @relation(fields: [skill_id], references: [id], onDelete: Cascade)
+
+  @@unique([worker_id, skill_id])
+}
+
+model WorkerAvailability {
+  id            String   @id @default(uuid())
+  worker_id     String
+  day_of_week   Int?     // 0=Sun, 1=Mon, ..., 6=Sat for recurring rules
+  specific_date String?  // YYYY-MM-DD for one-off overrides
+  start_time    String   // HH:mm
+  end_time      String   // HH:mm
+  is_available  Boolean  @default(true)
+
+  worker Worker @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+
+  @@index([worker_id])
+}
+
+model WageRate {
+  id                  String    @id @default(uuid())
+  worker_id           String
+  currency            String    @default("AUD")
+  rate_type           String    @default("hourly") // hourly, flat
+  amount              Float
+  overtime_multiplier Float     @default(1.5)
+  effective_from      DateTime  @default(now())
+  effective_to        DateTime?
+
+  worker Worker @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+
+  @@index([worker_id])
+}
+
+model RequirementTemplate {
+  id              String    @id @default(uuid())
+  client_id       String
+  recurrence_rule String    // RRULE string e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR
+  start_time      String    // HH:mm
+  end_time        String    // HH:mm
+  headcount       Int       @default(1)
+  active_from     DateTime  @default(now())
+  active_until    DateTime?
+  is_active       Boolean   @default(true)
+
+  client              Client              @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  client_requirements ClientRequirement[]
+
+  @@index([client_id])
+}
+
+model ClientRequirement {
+  id           String    @id @default(uuid())
+  client_id    String
+  template_id  String?
+  shift_date   String    // YYYY-MM-DD
+  start_time   String    // HH:mm
+  end_time     String    // HH:mm
+  headcount    Int       @default(1)
+  status       String    @default("pending_admin_approval") // pending_admin_approval, approved, rejected, shifts_generated
+  created_at   DateTime  @default(now())
+  approved_by  String?
+  approved_at  DateTime?
+
+  client               Client                @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  template             RequirementTemplate?  @relation(fields: [template_id], references: [id], onDelete: SetNull)
+  approver             User?                 @relation(fields: [approved_by], references: [id], onDelete: SetNull)
+  requirement_skills   RequirementSkill[]
+  shifts               Shift[]
+
+  @@index([client_id])
+}
+
+model RequirementSkill {
+  id                    String  @id @default(uuid())
+  client_requirement_id String
+  skill_id              String
+  is_mandatory          Boolean @default(true)
+
+  client_requirement ClientRequirement @relation(fields: [client_requirement_id], references: [id], onDelete: Cascade)
+  skill              Skill             @relation(fields: [skill_id], references: [id], onDelete: Cascade)
+
+  @@unique([client_requirement_id, skill_id])
+}
+
+model Shift {
+  id                    String   @id @default(uuid())
+  client_requirement_id String
+  slot_number           Int
+  scheduled_start       DateTime
+  scheduled_end         DateTime
+  status                String   @default("open") // open, offered, confirmed, in_progress, completed, no_show, cancelled
+
+  client_requirement ClientRequirement @relation(fields: [client_requirement_id], references: [id], onDelete: Cascade)
+  assignments        Assignment[]
+
+  @@index([client_requirement_id])
+}
+
+model Assignment {
+  id          String   @id @default(uuid())
+  shift_id    String
+  worker_id   String
+  status      String   @default("proposed") // proposed, confirmed, checked_in, completed, no_show, cancelled
+  assigned_at DateTime @default(now())
+  assigned_by String?
+
+  shift     Shift      @relation(fields: [shift_id], references: [id], onDelete: Cascade)
+  worker    Worker     @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+  assigner  User?      @relation(fields: [assigned_by], references: [id], onDelete: SetNull)
+  time_logs TimeLog[]
+
+  @@index([shift_id])
+  @@index([worker_id])
+}
+
+model TimeLog {
+  id             String    @id @default(uuid())
+  assignment_id  String
+  clock_in_at    DateTime
+  clock_out_at   DateTime?
+  clock_in_lat   Float
+  clock_in_lng   Float
+  clock_out_lat  Float?
+  clock_out_lng  Float?
+  geofence_passed Boolean  @default(true)
+  status         String    @default("pending_approval") // pending_approval, approved, billed, disputed
+  approved_by    String?
+  approved_at    DateTime?
+  billed_at      DateTime?
+
+  assignment   Assignment          @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+  approver     User?               @relation(fields: [approved_by], references: [id], onDelete: SetNull)
+  adjustments  TimeLogAdjustment[]
+  line_items   InvoiceLineItem[]
+
+  @@index([assignment_id])
+}
+
+model TimeLogAdjustment {
+  id              String   @id @default(uuid())
+  time_log_id     String
+  reason          String
+  original_hours  Float
+  corrected_hours Float
+  created_by      String
+  created_at      DateTime @default(now())
+
+  time_log TimeLog @relation(fields: [time_log_id], references: [id], onDelete: Cascade)
+  creator  User    @relation(fields: [created_by], references: [id], onDelete: Cascade)
+
+  @@index([time_log_id])
+}
+
+model BillRate {
+  id             String    @id @default(uuid())
+  payer_id       String
+  client_id      String?
+  skill_id       String?
+  currency       String    @default("AUD")
+  rate_type      String    @default("hourly") // hourly, flat
+  amount         Float
+  effective_from DateTime  @default(now())
+  effective_to   DateTime?
+
+  payer  Payer   @relation(fields: [payer_id], references: [id], onDelete: Cascade)
+  client Client? @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  skill  Skill?  @relation(fields: [skill_id], references: [id], onDelete: Cascade)
+
+  @@index([payer_id])
+}
+
+model Invoice {
+  id                   String   @id @default(uuid())
+  payer_id             String
+  agency_id            String
+  currency             String   @default("AUD")
+  billing_period_start DateTime
+  billing_period_end   DateTime
+  status               String   @default("draft") // draft, sent, partially_paid, paid, overdue, void
+  issued_at            DateTime @default(now())
+  due_at               DateTime
+  subtotal             Float    @default(0)
+  tax_amount           Float    @default(0)
+  total                Float    @default(0)
+
+  payer      Payer             @relation(fields: [payer_id], references: [id], onDelete: Cascade)
+  agency     Agency            @relation(fields: [agency_id], references: [id], onDelete: Cascade)
+  line_items InvoiceLineItem[]
+  payments   Payment[]
+
+  @@index([payer_id])
+  @@index([agency_id])
+}
+
+model InvoiceLineItem {
+  id                 String   @id @default(uuid())
+  invoice_id         String
+  time_log_id        String
+  worker_id          String
+  client_id          String
+  shift_date         String   // YYYY-MM-DD
+  hours              Float
+  bill_rate_applied  Float
+  line_total         Float
+
+  invoice  Invoice @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+  time_log TimeLog @relation(fields: [time_log_id], references: [id], onDelete: Cascade)
+  worker   Worker  @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+  client   Client  @relation(fields: [client_id], references: [id], onDelete: Cascade)
+
+  @@index([invoice_id])
+}
+
+model Payment {
+  id               String   @id @default(uuid())
+  invoice_id       String
+  amount           Float
+  currency         String   @default("AUD")
+  paid_at          DateTime @default(now())
+  method           String   @default("bank_transfer") // bank_transfer, credit_card, check
+  reference_number String
+
+  invoice Invoice @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+
+  @@index([invoice_id])
+}
+
+model User {
+  id               String   @id @default(uuid())
+  agency_id        String
+  email            String   @unique
+  password_hash    String
+  role             String   @default("coordinator") // admin, coordinator, worker, payer_readonly
+  linked_worker_id String?  @unique
+  created_at       DateTime @default(now())
+
+  agency              Agency              @relation(fields: [agency_id], references: [id], onDelete: Cascade)
+  linked_worker       Worker?             @relation("LinkedWorker", fields: [linked_worker_id], references: [id], onDelete: SetNull)
+  approved_reqs       ClientRequirement[]
+  assignments         Assignment[]
+  time_logs           TimeLog[]
+  adjustments         TimeLogAdjustment[]
+  audit_logs          AuditLog[]
+  managed_workers     Worker[]            @relation("CaseManagerWorkers")
+  uploaded_documents  WorkerDocument[]    @relation("DocumentUploader")
+  created_incidents   WorkerIncident[]    @relation("IncidentCreator")
+
+  @@index([agency_id])
+}
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  agency_id     String
+  actor_user_id String?
+  entity_type   String
+  entity_id     String
+  action        String
+  before_json   String?
+  after_json    String?
+  created_at    DateTime @default(now())
+
+  agency Agency @relation(fields: [agency_id], references: [id], onDelete: Cascade)
+  actor  User?  @relation(fields: [actor_user_id], references: [id], onDelete: SetNull)
+
+  @@index([agency_id])
+}
+
+model LaborConfig {
+  id                      String   @id @default(uuid())
+  agency_id               String   @unique
+  max_daily_hours         Float    @default(10.0)
+  max_weekly_hours        Float    @default(38.0)
+  min_rest_hours          Float    @default(10.0)
+  geofence_radius_meters Float    @default(150.0)
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+
+  agency Agency @relation(fields: [agency_id], references: [id], onDelete: Cascade)
+}
