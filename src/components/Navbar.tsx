@@ -27,24 +27,13 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 56 }}>
         {/* Brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            background: 'linear-gradient(135deg, #6366f1 0%, #4338ca 100%)',
-            padding: '6px 12px',
-            borderRadius: 8,
-            fontWeight: 800,
-            fontSize: 16,
-            color: 'white',
-            letterSpacing: '0.5px',
-            fontFamily: 'Outfit, sans-serif',
-          }}>
-            APEX
-          </div>
+          <img src="/unity-help-logo.jpg" alt="Unity Help" style={{ height: 36, borderRadius: 6 }} />
           <div>
             <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-main)', fontFamily: 'Outfit, sans-serif' }}>
-              {user?.agency_name || 'Apex Staffing Solutions Australia'}
+              {user?.agency_name || 'Unity Help Pty Ltd'}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span>Multi-Tenant Agency Engine</span>
+              <span>Aged Care & NDIS Support</span>
               <span>•</span>
               <span className="badge badge-open" style={{ fontSize: 10, padding: '1px 6px' }}>
                 Currency: {user?.default_currency || 'AUD'}

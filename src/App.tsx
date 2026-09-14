@@ -21,7 +21,7 @@ function MainContent() {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--text-main)', flexDirection: 'column', gap: 16 }}>
         <div style={{ width: 40, height: 40, border: '3px solid #6366f1', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>Loading Apex Staffing Platform…</span>
+        <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>Loading Unity Help Platform…</span>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );

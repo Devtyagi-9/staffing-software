@@ -1,6 +1,8 @@
 import { prisma } from '../db';
 import PDFDocument from 'pdfkit';
 import { recordAuditLog } from './auditLogger';
+import fs from 'fs';
+import path from 'path';
 
 /* ─────────────────────────────────────────────────────────────────
    BILL RATE RESOLUTION
@@ -393,17 +395,17 @@ const AGENCY_DETAILS = {
   address_line_1: '438b Chesterville Rd',
   address_line_2: 'BENTLEIGH EAST VIC 3165',
   abn: '77694705112',
-  email: 'info@apexstaffing.com.au',
+  email: 'info@unityhelp.com.au',
   phone: '+61 0469070434',
   bank: {
-    account_name: 'Apex Staffing Solutions Pty Ltd',
+    account_name: 'Unity Help Pty Ltd',
     bsb: '067873',
     account_number: '23790512',
   },
   contact: {
     title: 'Finance officer',
     phone: '0469 070 434',
-    email: 'info@apexstaffing.com.au',
+    email: 'info@unityhelp.com.au',
   },
 };
 
@@ -424,7 +426,7 @@ export function generateInvoicePDFBuffer(invoice: any): Promise<Buffer> {
       const LIGHT_BG  = '#f5f5f5';
       const BLUE_LINK = '#1a73e8';
       const currency  = invoice.currency || 'AUD';
-      const agencyName = invoice.agency?.name || 'Apex Staffing Solutions Australia';
+      const agencyName = invoice.agency?.name || 'Unity Help Pty Ltd';
       const invNum    = `INV-${invoice.id.substring(0, 8).toUpperCase()}`;
       const clientName = invoice.line_items?.[0]?.client?.name || 'Client';
       const issuedAt  = new Date(invoice.issued_at);
@@ -457,10 +459,17 @@ export function generateInvoicePDFBuffer(invoice: any): Promise<Buffer> {
 
       // Right: Agency details
       const rightColX = pageW - 250;
-      doc.font('Helvetica-Bold').fontSize(10).fill(DARK)
-        .text(agencyName, rightColX, y, { width: 200, align: 'right' });
+      const logoPath = path.join(process.cwd(), 'public', 'unity-help-logo.jpg');
+      let ry = 50; // Start at the same height as the Tax Invoice title
+      if (fs.existsSync(logoPath)) {
+        doc.image(logoPath, pageW - 150, ry, { width: 100 });
+        ry += 105;
+      } else {
+        doc.font('Helvetica-Bold').fontSize(10).fill(DARK)
+          .text(agencyName, rightColX, ry, { width: 200, align: 'right' });
+        ry += 14;
+      }
       doc.font('Helvetica').fontSize(9).fill(DARK);
-      let ry = y + 14;
       doc.text(AGENCY_DETAILS.address_line_1, rightColX, ry, { width: 200, align: 'right' });
       ry += 12;
       doc.text(AGENCY_DETAILS.address_line_2, rightColX, ry, { width: 200, align: 'right' });

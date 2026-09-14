@@ -77,22 +77,17 @@ export const LoginPage: React.FC = () => {
         {/* Left Branding */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 24, paddingTop: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{
-              background: 'linear-gradient(135deg, #6366f1 0%, #4338ca 100%)',
-              padding: '12px 18px',
+            <img src="/unity-help-logo.jpg" alt="Unity Help" style={{
+              height: 64,
               borderRadius: 12,
-              fontWeight: 800,
-              fontSize: 26,
-              color: 'white',
-              letterSpacing: '1px',
-              boxShadow: '0 8px 30px rgba(99,102,241,0.35)',
-            }}>APEX</div>
+              boxShadow: '0 8px 30px rgba(99,102,241,0.15)',
+            }} />
             <div>
               <div style={{ fontWeight: 800, fontSize: 22, color: 'var(--text-main)', fontFamily: 'Outfit, sans-serif' }}>
-                Apex Staffing
+                Unity Help
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>
-                Enterprise Workforce Platform
+                Aged Care & NDIS Support
               </div>
             </div>
           </div>
@@ -198,7 +193,7 @@ export const LoginPage: React.FC = () => {
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="you@apexstaffing.com.au"
+                  placeholder="you@unityhelp.com.au"
                   autoComplete="email"
                   style={{ width: '100%', fontSize: 14 }}
                   disabled={isLoading}

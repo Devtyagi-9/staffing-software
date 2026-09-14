@@ -34,7 +34,7 @@ async function main() {
   // 1. Create Agency
   const agency = await prisma.agency.create({
     data: {
-      name: 'Apex Staffing Solutions Australia',
+      name: 'Unity Help Pty Ltd',
       default_currency: 'AUD',
     },
   });
