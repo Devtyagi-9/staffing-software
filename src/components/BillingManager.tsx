@@ -585,35 +585,50 @@ export const BillingManager: React.FC = () => {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                                   <thead>
                                     <tr style={{ background: '#e8ecf8' }}>
-                                      {['Shift Date', 'Worker', 'Hours', 'Rate (AUD)', 'Total (AUD)'].map(h => (
-                                        <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 700, fontSize: 11 }}>{h}</th>
+                                      {['Description', 'Quantity', 'Price', 'Tax', 'Amount'].map(h => (
+                                        <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Description' ? 'left' : 'right', color: 'var(--text-muted)', fontWeight: 700, fontSize: 11 }}>{h}</th>
                                       ))}
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {(inv.line_items || []).map((item: any, i: number) => (
-                                      <tr key={item.id} style={{ background: i % 2 === 0 ? 'white' : '#f8fafc' }}>
-                                        <td style={{ padding: '6px 10px' }}>{item.shift_date}</td>
-                                        <td style={{ padding: '6px 10px' }}>{item.worker?.name || '—'}</td>
-                                        <td style={{ padding: '6px 10px' }}>{item.hours?.toFixed(2)}h</td>
-                                        <td style={{ padding: '6px 10px' }}>${item.bill_rate_applied?.toFixed(2)}</td>
-                                        <td style={{ padding: '6px 10px', fontWeight: 700 }}>${item.line_total?.toFixed(2)}</td>
-                                      </tr>
-                                    ))}
+                                    {(inv.line_items || []).map((item: any, i: number) => {
+                                      const dateParts = (item.shift_date || '').split('-');
+                                      const dateStr = dateParts.length === 3 ? `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}` : item.shift_date || '—';
+                                      const startTime = item.shift_start_time || item.time_log?.assignment?.shift?.client_requirement?.start_time || '';
+                                      const endTime = item.shift_end_time || item.time_log?.assignment?.shift?.client_requirement?.end_time || '';
+                                      const dayOfWeek = item.shift_date ? new Date(item.shift_date + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'long' }) : 'Weekday';
+                                      const fmtTime = (t: string) => {
+                                        if (!t) return '';
+                                        const [h, m] = t.split(':').map(Number);
+                                        const suffix = h >= 12 ? 'pm' : 'am';
+                                        const h12 = h % 12 || 12;
+                                        return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')}${suffix}`;
+                                      };
+                                      const description = `${dateStr} IND Assistance with Daily Living ${dayOfWeek} ${fmtTime(startTime)} ${fmtTime(endTime)}`.trim();
+                                      return (
+                                        <tr key={item.id} style={{ background: i % 2 === 0 ? 'white' : '#f8fafc' }}>
+                                          <td style={{ padding: '6px 10px', maxWidth: 340 }}>{description}</td>
+                                          <td style={{ padding: '6px 10px', textAlign: 'right' }}>{Math.round(item.hours)}</td>
+                                          <td style={{ padding: '6px 10px', textAlign: 'right' }}>{item.bill_rate_applied?.toFixed(2)}</td>
+                                          <td style={{ padding: '6px 10px', textAlign: 'right' }}>0%</td>
+                                          <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700 }}>{item.line_total?.toFixed(2)}</td>
+                                        </tr>
+                                      );
+                                    })}
                                     <tr style={{ background: '#e8ecf8', fontWeight: 700 }}>
                                       <td colSpan={3} style={{ padding: '8px 10px' }}></td>
-                                      <td style={{ padding: '8px 10px', fontSize: 12 }}>Subtotal</td>
-                                      <td style={{ padding: '8px 10px', fontSize: 13 }}>${inv.subtotal?.toFixed(2)}</td>
+                                      <td style={{ padding: '8px 10px', fontSize: 12, textAlign: 'right' }}>Subtotal</td>
+                                      <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right' }}>{inv.subtotal?.toFixed(2)}</td>
                                     </tr>
                                     <tr style={{ background: '#e8ecf8' }}>
                                       <td colSpan={3}></td>
-                                      <td style={{ padding: '4px 10px', fontSize: 11, color: 'var(--text-muted)' }}>GST (10%)</td>
-                                      <td style={{ padding: '4px 10px', fontSize: 12 }}>${inv.tax_amount?.toFixed(2)}</td>
+                                      <td style={{ padding: '4px 10px', fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Total</td>
+                                      <td style={{ padding: '4px 10px', fontSize: 12, textAlign: 'right' }}>{inv.total?.toFixed(2)}</td>
                                     </tr>
-                                    <tr style={{ background: '#4f46e5' }}>
+                                    <tr style={{ background: '#111827' }}>
                                       <td colSpan={3}></td>
-                                      <td style={{ padding: '8px 10px', color: 'white', fontWeight: 700, fontSize: 12 }}>TOTAL DUE</td>
-                                      <td style={{ padding: '8px 10px', color: 'white', fontWeight: 800, fontSize: 14 }}>${inv.total?.toFixed(2)}</td>
+                                      <td style={{ padding: '8px 10px', color: 'white', fontWeight: 700, fontSize: 12, textAlign: 'right' }}>Amount due</td>
+                                      <td style={{ padding: '8px 10px', color: 'white', fontWeight: 800, fontSize: 14, textAlign: 'right' }}>${inv.total?.toFixed(2)}</td>
                                     </tr>
                                   </tbody>
                                 </table>

@@ -238,6 +238,8 @@ export async function generateInvoicesPerClient(params: {
       const shift  = log.assignment.shift;
       const worker = log.assignment.worker;
       const shiftDateStr = shift.client_requirement.shift_date;
+      const shiftStartTime = shift.client_requirement.start_time || null;
+      const shiftEndTime = shift.client_requirement.end_time || null;
 
       const clockIn  = new Date(log.clock_in_at);
       let rawHours = 0;
@@ -262,6 +264,8 @@ export async function generateInvoicesPerClient(params: {
         worker_name:      worker.name,
         client_id:        client.id,
         shift_date:       shiftDateStr,
+        shift_start_time: shiftStartTime,
+        shift_end_time:   shiftEndTime,
         hours,
         bill_rate_applied: appliedRate,
         line_total:       lineTotal,
@@ -297,6 +301,8 @@ export async function generateInvoicesPerClient(params: {
             worker_id:         item.worker_id,
             client_id:         item.client_id,
             shift_date:        item.shift_date,
+            shift_start_time:  item.shift_start_time,
+            shift_end_time:    item.shift_end_time,
             hours:             item.hours,
             bill_rate_applied: item.bill_rate_applied,
             line_total:        item.line_total,
@@ -354,7 +360,55 @@ export async function generateInvoiceFromTimeLogs(params: {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   PDF GENERATION — per-client, grouped by worker
+   HELPERS
+   ───────────────────────────────────────────────────────────────── */
+function formatTime12(hhmm: string | null | undefined): string {
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  const suffix = h >= 12 ? 'pm' : 'am';
+  const h12 = h % 12 || 12;
+  return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')}${suffix}`;
+}
+
+function getDayOfWeek(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()] || 'Weekday';
+}
+
+function formatDateDDMMYYYY(dateStr: string): string {
+  const parts = dateStr.split('-'); // YYYY-MM-DD
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}-${parts[1]}-${parts[0]}`;
+}
+
+function formatDateLong(d: Date): string {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   AGENCY CONSTANTS (hardcoded for now — can be moved to DB later)
+   ───────────────────────────────────────────────────────────────── */
+const AGENCY_DETAILS = {
+  address_line_1: '438b Chesterville Rd',
+  address_line_2: 'BENTLEIGH EAST VIC 3165',
+  abn: '77694705112',
+  email: 'info@apexstaffing.com.au',
+  phone: '+61 0469070434',
+  bank: {
+    account_name: 'Apex Staffing Solutions Pty Ltd',
+    bsb: '067873',
+    account_number: '23790512',
+  },
+  contact: {
+    title: 'Finance officer',
+    phone: '0469 070 434',
+    email: 'info@apexstaffing.com.au',
+  },
+};
+
+/* ─────────────────────────────────────────────────────────────────
+   PDF GENERATION — Xero-style Tax Invoice
    ───────────────────────────────────────────────────────────────── */
 export function generateInvoicePDFBuffer(invoice: any): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -365,135 +419,228 @@ export function generateInvoicePDFBuffer(invoice: any): Promise<Buffer> {
       doc.on('data', (chunk) => buffers.push(chunk));
       doc.on('end',  () => resolve(Buffer.concat(buffers)));
 
-      const PRIMARY   = '#4f46e5';
       const DARK      = '#111827';
       const MUTED     = '#6b7280';
-      const LIGHT_BG  = '#f9fafb';
+      const LIGHT_BG  = '#f5f5f5';
+      const BLUE_LINK = '#1a73e8';
       const currency  = invoice.currency || 'AUD';
-
-      // ── Header band ──
-      doc.rect(0, 0, doc.page.width, 110).fill(PRIMARY);
-      doc.fill('#ffffff').fontSize(22).font('Helvetica-Bold')
-        .text(invoice.agency?.name || 'Staffing Agency', 50, 28);
-      doc.fontSize(11).font('Helvetica').fill('rgba(255,255,255,0.85)')
-        .text('TAX INVOICE', 50, 56);
-
-      // Invoice number badge
-      const invNum = `INV-${invoice.id.substring(0, 8).toUpperCase()}`;
-      doc.fontSize(14).font('Helvetica-Bold').fill('#ffffff')
-        .text(invNum, doc.page.width - 200, 38, { width: 150, align: 'right' });
-
-      doc.fill(DARK).fontSize(10);
-
-      // ── Invoice meta ──
-      let y = 130;
-      const col1 = 50, col2 = 300;
-
-      // Left: billed-to
-      doc.font('Helvetica-Bold').text('BILLED TO', col1, y);
-      doc.font('Helvetica').fill(MUTED)
-        .text(invoice.payer?.name || '—', col1, y + 16);
-      if (invoice.payer?.billing_email) doc.text(invoice.payer.billing_email, col1, y + 30);
-      if (invoice.payer?.abn)           doc.text(`ABN: ${invoice.payer.abn}`, col1, y + 44);
-
-      // Right: invoice details
-      doc.font('Helvetica-Bold').fill(DARK).text('INVOICE DETAILS', col2, y);
-      doc.font('Helvetica').fill(MUTED);
-      const details = [
-        ['Issue Date',      new Date(invoice.issued_at).toLocaleDateString('en-AU')],
-        ['Due Date',        new Date(invoice.due_at).toLocaleDateString('en-AU')],
-        ['Billing Period',  `${new Date(invoice.billing_period_start).toLocaleDateString('en-AU')} – ${new Date(invoice.billing_period_end).toLocaleDateString('en-AU')}`],
-        ['Currency',        currency],
-      ];
-      details.forEach(([label, val], i) => {
-        doc.font('Helvetica-Bold').fill(DARK).text(`${label}:`, col2, y + 16 + i * 14, { continued: true });
-        doc.font('Helvetica').fill(MUTED).text(` ${val}`);
-      });
-
-      // ── Client section ──
-      y = 240;
-      // Get unique client name from line items
+      const agencyName = invoice.agency?.name || 'Apex Staffing Solutions Australia';
+      const invNum    = `INV-${invoice.id.substring(0, 8).toUpperCase()}`;
       const clientName = invoice.line_items?.[0]?.client?.name || 'Client';
-      doc.rect(col1, y, doc.page.width - 100, 28).fill('#eef2ff');
-      doc.fill(PRIMARY).font('Helvetica-Bold').fontSize(11)
-        .text(`Client: ${clientName}`, col1 + 10, y + 8);
-      y += 38;
+      const issuedAt  = new Date(invoice.issued_at);
+      const dueAt     = new Date(invoice.due_at);
+      const pageW     = doc.page.width;
+      const leftM     = 50;
+      const rightM    = pageW - 50;
+      const contentW  = rightM - leftM;
 
-      // ── Line items table header ──
-      doc.rect(col1, y, doc.page.width - 100, 22).fill(DARK);
-      doc.fill('#ffffff').font('Helvetica-Bold').fontSize(9);
-      const cols = { date: col1 + 6, worker: col1 + 80, hours: col1 + 260, rate: col1 + 320, total: col1 + 390 };
-      doc.text('SHIFT DATE',  cols.date,   y + 7);
-      doc.text('WORKER',      cols.worker, y + 7);
-      doc.text('HOURS',       cols.hours,  y + 7);
-      doc.text(`RATE (${currency})`, cols.rate, y + 7);
-      doc.text(`TOTAL (${currency})`, cols.total, y + 7);
-      y += 22;
+      let y = 50;
 
-      // ── Group line items by worker ──
-      const byWorker = new Map<string, any[]>();
-      for (const item of (invoice.line_items || [])) {
-        const wname = item.worker?.name || 'Unknown';
-        if (!byWorker.has(wname)) byWorker.set(wname, []);
-        byWorker.get(wname)!.push(item);
+      // ═══════════════════════════════════════════════════════════
+      // TITLE: "Tax Invoice"
+      // ═══════════════════════════════════════════════════════════
+      doc.font('Helvetica-Bold').fontSize(24).fill(DARK)
+        .text('Tax Invoice', leftM, y);
+      y += 45;
+
+      // ═══════════════════════════════════════════════════════════
+      // FROM / TO SECTION
+      // ═══════════════════════════════════════════════════════════
+      // Left: Payer (billed to)
+      doc.font('Helvetica').fontSize(10).fill(DARK);
+      const payerName = invoice.payer?.name || '—';
+      doc.text(payerName, leftM, y);
+      const payerY = y + 14;
+      if (invoice.payer?.billing_email) {
+        doc.fill(MUTED).text(invoice.payer.billing_email, leftM, payerY);
       }
 
-      let rowIndex = 0;
-      for (const [workerName, items] of byWorker) {
-        let workerSubtotal = 0;
+      // Right: Agency details
+      const rightColX = pageW - 250;
+      doc.font('Helvetica-Bold').fontSize(10).fill(DARK)
+        .text(agencyName, rightColX, y, { width: 200, align: 'right' });
+      doc.font('Helvetica').fontSize(9).fill(DARK);
+      let ry = y + 14;
+      doc.text(AGENCY_DETAILS.address_line_1, rightColX, ry, { width: 200, align: 'right' });
+      ry += 12;
+      doc.text(AGENCY_DETAILS.address_line_2, rightColX, ry, { width: 200, align: 'right' });
+      ry += 16;
+      doc.text(`ABN: ${AGENCY_DETAILS.abn}`, rightColX, ry, { width: 200, align: 'right' });
+      ry += 12;
+      doc.text(AGENCY_DETAILS.email, rightColX, ry, { width: 200, align: 'right' });
+      ry += 12;
+      doc.text(AGENCY_DETAILS.phone, rightColX, ry, { width: 200, align: 'right' });
 
-        for (const item of items) {
-          if (y > doc.page.height - 120) { doc.addPage(); y = 50; }
+      y = Math.max(payerY + 20, ry + 20);
+      y += 10;
 
-          const bg = rowIndex % 2 === 0 ? '#ffffff' : LIGHT_BG;
-          doc.rect(col1, y, doc.page.width - 100, 18).fill(bg);
-          doc.fill(DARK).font('Helvetica').fontSize(8.5);
-          doc.text(item.shift_date || '—',                   cols.date,   y + 5, { width: 70 });
-          doc.text(workerName,                               cols.worker, y + 5, { width: 170 });
-          doc.text(item.hours.toFixed(2) + 'h',             cols.hours,  y + 5, { width: 54 });
-          doc.text(`$${item.bill_rate_applied.toFixed(2)}`, cols.rate,   y + 5, { width: 60 });
-          doc.font('Helvetica-Bold')
-            .text(`$${item.line_total.toFixed(2)}`,         cols.total,  y + 5, { width: 65 });
-          workerSubtotal += item.line_total;
-          y += 18;
-          rowIndex++;
-        }
+      // ═══════════════════════════════════════════════════════════
+      // SUMMARY ROW: Amount due | Due date | Issue date | Invoice # | Reference
+      // ═══════════════════════════════════════════════════════════
+      // Draw a light separator line
+      doc.moveTo(leftM, y).lineTo(rightM, y).strokeColor('#e5e7eb').lineWidth(1).stroke();
+      y += 14;
 
-        // Worker subtotal row
-        if (y > doc.page.height - 100) { doc.addPage(); y = 50; }
-        doc.rect(col1, y, doc.page.width - 100, 16).fill('#e0e7ff');
-        doc.fill(PRIMARY).font('Helvetica-Bold').fontSize(8)
-          .text(`Subtotal — ${workerName}`, cols.date, y + 4, { width: 350 });
-        doc.text(`$${workerSubtotal.toFixed(2)}`, cols.total, y + 4, { width: 65 });
-        y += 20;
-      }
+      const summaryLabels = ['Amount due', 'Due date', 'Issue date', 'Invoice number', 'Reference'];
+      const summaryValues = [
+        `$${invoice.total.toFixed(2)}`,
+        formatDateLong(dueAt),
+        formatDateLong(issuedAt),
+        invNum,
+        clientName,
+      ];
+      const colWidth = contentW / 5;
 
-      // ── Totals ──
-      if (y > doc.page.height - 130) { doc.addPage(); y = 50; }
+      // Labels
+      doc.font('Helvetica').fontSize(8).fill(MUTED);
+      summaryLabels.forEach((label, i) => {
+        doc.text(label, leftM + i * colWidth, y, { width: colWidth });
+      });
       y += 12;
-      const totX = doc.page.width - 230;
-      const totW = 180;
 
-      const drawTotalLine = (label: string, value: string, bold = false, highlight = false) => {
-        if (highlight) doc.rect(totX - 10, y - 3, totW + 10, 22).fill(PRIMARY);
-        doc.font(bold ? 'Helvetica-Bold' : 'Helvetica')
-           .fontSize(bold ? 10 : 9)
-           .fill(highlight ? '#ffffff' : (bold ? DARK : MUTED));
-        doc.text(label, totX, y, { width: totW / 2 });
-        doc.text(value, totX + totW / 2, y, { width: totW / 2, align: 'right' });
-        y += highlight ? 26 : 18;
+      // Values
+      doc.font('Helvetica-Bold').fill(DARK);
+      summaryValues.forEach((val, i) => {
+        const fontSize = i === 0 ? 16 : (i === 1 ? 14 : 10);
+        doc.fontSize(fontSize).text(val, leftM + i * colWidth, y, { width: colWidth });
+      });
+      y += 28;
+
+      // ═══════════════════════════════════════════════════════════
+      // LINE ITEMS TABLE
+      // ═══════════════════════════════════════════════════════════
+      // Draw separator
+      doc.moveTo(leftM, y).lineTo(rightM, y).strokeColor('#e5e7eb').lineWidth(1).stroke();
+      y += 8;
+
+      // Table header
+      const tblCols = {
+        desc:  leftM,
+        qty:   leftM + 310,
+        price: leftM + 370,
+        tax:   leftM + 420,
+        amt:   leftM + 460,
+      };
+      const tblColWidths = {
+        desc:  305,
+        qty:   55,
+        price: 50,
+        tax:   38,
+        amt:   contentW - 460,
       };
 
-      drawTotalLine('Subtotal',            `${currency} $${invoice.subtotal.toFixed(2)}`);
-      drawTotalLine('GST (10%)',           `${currency} $${invoice.tax_amount.toFixed(2)}`);
-      drawTotalLine('TOTAL AMOUNT DUE',   `${currency} $${invoice.total.toFixed(2)}`, true, true);
+      // Header row
+      doc.font('Helvetica').fontSize(8.5).fill(MUTED);
+      doc.text('Description',  tblCols.desc,  y, { width: tblColWidths.desc });
+      doc.text('Quantity',     tblCols.qty,   y, { width: tblColWidths.qty, align: 'center' });
+      doc.text('Price',        tblCols.price, y, { width: tblColWidths.price, align: 'right' });
+      doc.text('Tax',          tblCols.tax,   y, { width: tblColWidths.tax, align: 'right' });
+      doc.text('Amount',       tblCols.amt,   y, { width: tblColWidths.amt, align: 'right' });
+      y += 14;
 
-      // ── Footer ──
-      const footerY = doc.page.height - 55;
-      doc.rect(0, footerY, doc.page.width, 55).fill('#f3f4f6');
-      doc.fill(MUTED).font('Helvetica').fontSize(8)
-        .text(`Generated by ${invoice.agency?.name || 'Staffing Agency'} · ${invNum} · Please remit by ${new Date(invoice.due_at).toLocaleDateString('en-AU')}`,
-          50, footerY + 18, { align: 'center', width: doc.page.width - 100 });
+      // Thin line under header
+      doc.moveTo(leftM, y).lineTo(rightM, y).strokeColor('#d1d5db').lineWidth(0.5).stroke();
+      y += 6;
+
+      // ── Line items ──
+      const lineItems = invoice.line_items || [];
+      for (let i = 0; i < lineItems.length; i++) {
+        const item = lineItems[i];
+
+        if (y > doc.page.height - 200) { doc.addPage(); y = 50; }
+
+        // Build description: "DD-MM-YYYY IND Assistance with Daily Living Weekday HH:MMpm HH:MMpm"
+        const dateStr = item.shift_date ? formatDateDDMMYYYY(item.shift_date) : '—';
+        const dayName = item.shift_date ? getDayOfWeek(item.shift_date) : 'Weekday';
+        // Fallback: read shift times from nested time_log chain if not stored directly
+        const rawStartTime = item.shift_start_time || item.time_log?.assignment?.shift?.client_requirement?.start_time || null;
+        const rawEndTime = item.shift_end_time || item.time_log?.assignment?.shift?.client_requirement?.end_time || null;
+        const startTime = formatTime12(rawStartTime);
+        const endTime = formatTime12(rawEndTime);
+        const description = `${dateStr} IND Assistance with Daily Living ${dayName} ${startTime} ${endTime}`.trim();
+
+        // Alternating row background
+        const rowH = 28;
+        if (i % 2 === 1) {
+          doc.rect(leftM - 4, y - 2, contentW + 8, rowH).fill(LIGHT_BG);
+        }
+
+        doc.font('Helvetica').fontSize(8.5).fill(DARK);
+        doc.text(description, tblCols.desc, y + 4, { width: tblColWidths.desc });
+        doc.text(item.hours.toFixed(0), tblCols.qty, y + 4, { width: tblColWidths.qty, align: 'center' });
+        doc.text(item.bill_rate_applied.toFixed(2), tblCols.price, y + 4, { width: tblColWidths.price, align: 'right' });
+        doc.text('0%', tblCols.tax, y + 4, { width: tblColWidths.tax, align: 'right' });
+        doc.text(item.line_total.toFixed(2), tblCols.amt, y + 4, { width: tblColWidths.amt, align: 'right' });
+
+        y += rowH;
+      }
+
+      // ═══════════════════════════════════════════════════════════
+      // TOTALS SECTION (right-aligned)
+      // ═══════════════════════════════════════════════════════════
+      if (y > doc.page.height - 180) { doc.addPage(); y = 50; }
+
+      y += 4;
+      // Thin line
+      doc.moveTo(leftM, y).lineTo(rightM, y).strokeColor('#d1d5db').lineWidth(0.5).stroke();
+      y += 10;
+
+      const totLabelX = tblCols.price - 20;
+      const totValueX = tblCols.amt;
+      const totValueW = tblColWidths.amt;
+
+      // Subtotal
+      doc.font('Helvetica').fontSize(9).fill(MUTED)
+        .text('Subtotal', totLabelX, y, { width: 80, align: 'right' });
+      doc.font('Helvetica').fill(DARK)
+        .text(invoice.subtotal.toFixed(2), totValueX, y, { width: totValueW, align: 'right' });
+      y += 18;
+
+      // Total
+      doc.font('Helvetica-Bold').fontSize(9).fill(DARK)
+        .text('Total', totLabelX, y, { width: 80, align: 'right' });
+      doc.text(invoice.total.toFixed(2), totValueX, y, { width: totValueW, align: 'right' });
+      y += 22;
+
+      // Amount due (large, bold)
+      doc.font('Helvetica-Bold').fontSize(9).fill(DARK)
+        .text('Amount due', totLabelX, y + 2, { width: 80, align: 'right' });
+      doc.font('Helvetica-Bold').fontSize(16).fill(DARK)
+        .text(`$${invoice.total.toFixed(2)}`, totValueX - 20, y - 2, { width: totValueW + 20, align: 'right' });
+      y += 30;
+
+      // ═══════════════════════════════════════════════════════════
+      // BANK DETAILS SECTION
+      // ═══════════════════════════════════════════════════════════
+      if (y > doc.page.height - 160) { doc.addPage(); y = 50; }
+
+      y += 20;
+      doc.moveTo(leftM, y).lineTo(rightM, y).strokeColor('#e5e7eb').lineWidth(1).stroke();
+      y += 14;
+
+      doc.font('Helvetica').fontSize(9).fill(DARK);
+      doc.text('Amount to be transferred to below account:', leftM, y);
+      y += 14;
+      doc.font('Helvetica-Bold').text(`Account Name: ${AGENCY_DETAILS.bank.account_name}`, leftM, y);
+      y += 13;
+      doc.font('Helvetica').text(`BSB Number: ${AGENCY_DETAILS.bank.bsb}`, leftM, y);
+      y += 13;
+      doc.text(`Account Number: ${AGENCY_DETAILS.bank.account_number}`, leftM, y);
+
+      // ═══════════════════════════════════════════════════════════
+      // CONTACT INFORMATION SECTION
+      // ═══════════════════════════════════════════════════════════
+      y += 24;
+      doc.font('Helvetica').fontSize(9).fill(DARK);
+      doc.text('In case of any queries/concerns related to this invoice, please', leftM, y);
+      y += 12;
+      doc.text('contact', leftM, y);
+      y += 14;
+      doc.font('Helvetica-Bold').text(AGENCY_DETAILS.contact.title, leftM, y);
+      y += 13;
+      doc.font('Helvetica').text(`Ph: ${AGENCY_DETAILS.contact.phone}`, leftM, y);
+      y += 13;
+      doc.text(`Email: ${AGENCY_DETAILS.contact.email}`, leftM, y);
 
       doc.end();
     } catch (err) {

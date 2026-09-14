@@ -426,6 +426,8 @@ model InvoiceLineItem {
   worker_id          String
   client_id          String
   shift_date         String   // YYYY-MM-DD
+  shift_start_time   String?  // HH:mm
+  shift_end_time     String?  // HH:mm
   hours              Float
   bill_rate_applied  Float
   line_total         Float

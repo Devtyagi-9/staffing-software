@@ -97,7 +97,21 @@ router.get('/invoices', authenticateJWT, async (req: AuthenticatedRequest, res: 
     include: {
       payer: true,
       line_items: {
-        include: { worker: true, client: true },
+        include: {
+          worker: true,
+          client: true,
+          time_log: {
+            include: {
+              assignment: {
+                include: {
+                  shift: {
+                    include: { client_requirement: true },
+                  },
+                },
+              },
+            },
+          },
+        },
         orderBy: { shift_date: 'asc' },
       },
       payments: true,
@@ -169,7 +183,21 @@ router.get('/invoices/:id/pdf', authenticateJWT, async (req: AuthenticatedReques
       payer: true,
       agency: true,
       line_items: {
-        include: { worker: true, client: true },
+        include: {
+          worker: true,
+          client: true,
+          time_log: {
+            include: {
+              assignment: {
+                include: {
+                  shift: {
+                    include: { client_requirement: true },
+                  },
+                },
+              },
+            },
+          },
+        },
         orderBy: { shift_date: 'asc' },
       },
     },
