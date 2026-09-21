@@ -46,6 +46,56 @@ router.get('/', authenticateJWT, async (req: AuthenticatedRequest, res: Response
   res.json(workers);
 });
 
+/* ─── Get Authenticated Worker's Shifts (Mobile App) ─────────────── */
+router.get('/my-shifts', authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  const workerId = req.user?.linked_worker_id;
+  if (!workerId) {
+    return res.status(403).json({ error: 'User is not linked to a worker profile.' });
+  }
+
+  const assignments = await prisma.assignment.findMany({
+    where: {
+      worker_id: workerId,
+      status: 'confirmed',
+    },
+    include: {
+      shift: {
+        include: {
+          client_requirement: {
+            include: {
+              client: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: {
+      shift: {
+        scheduled_start: 'asc',
+      },
+    },
+  });
+
+  // Extract shift format expected by the app
+  const shifts = assignments.map(a => ({
+    id: a.shift.id,
+    assignment_id: a.id,
+    scheduled_start: a.shift.scheduled_start,
+    scheduled_end: a.shift.scheduled_end,
+    status: a.status,
+    client_requirement: {
+      client: {
+        name: a.shift.client_requirement.client.name,
+        address_line: a.shift.client_requirement.client.address_line,
+        lat: a.shift.client_requirement.client.lat,
+        lng: a.shift.client_requirement.client.lng,
+      },
+    },
+  }));
+
+  res.json(shifts);
+});
+
 /* ─── Get Single Worker (full profile) ───────────────────────────── */
 router.get('/:id', authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   const worker = await prisma.worker.findFirst({

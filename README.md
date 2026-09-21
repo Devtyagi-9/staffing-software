@@ -124,3 +124,89 @@ Serve the compiled static frontend directly from the backend Express server.
     ```
 2.  Build the frontend: `npm run build`
 3.  Deploy the entire repository to a server platform (Render, AWS EBS, Heroku) and start the backend service: `node server/dist/index.js` (or via ts-node in production).
+
+---
+
+## Mobile App API Contracts
+
+For the cross-platform (Android/iOS) worker mobile app in the `mobile_app/` directory, the following REST APIs are documented for seamless backend communication.
+
+### Authentication & Authorization
+All endpoints (except `/login`) require the JWT token passed as a Bearer token in the `Authorization` header.
+
+**1. Worker Login**
+*   **Endpoint**: `POST /api/auth/login`
+*   **Description**: Authenticates the worker and returns a JWT token.
+*   **Request Body**:
+    ```json
+    { "email": "sarah.jenkins@example.com", "password": "Password123!" }
+    ```
+*   **Response (200 OK)**:
+    ```json
+    {
+      "token": "eyJhbG...",
+      "user": {
+        "id": "...",
+        "role": "worker",
+        "linked_worker_id": "...",
+        "worker_name": "Sarah Jenkins"
+      }
+    }
+    ```
+
+### Shifts & Roster
+**2. Get Assigned Shifts (With Location)**
+*   **Endpoint**: `GET /api/workers/my-shifts`
+*   **Description**: Returns all shifts specifically assigned to the currently authenticated worker. Includes start/end times and client location data.
+*   **Response (200 OK)**:
+    ```json
+    [
+      {
+        "id": "shift_id",
+        "scheduled_start": "2026-10-14T08:00:00Z",
+        "scheduled_end": "2026-10-14T16:00:00Z",
+        "client_requirement": {
+          "client": {
+            "name": "HealthFirst Australia",
+            "address_line": "123 Health Ave, VIC",
+            "lat": -37.8136,
+            "lng": 144.9631
+          }
+        },
+        "status": "confirmed"
+      }
+    ]
+    ```
+
+### Time Tracking (Clocking)
+**3. Clock In**
+*   **Endpoint**: `POST /api/attendance/clock-in`
+*   **Description**: Creates a new time log for the worker's shift assignment using their current GPS coordinates.
+*   **Request Body**:
+    ```json
+    {
+      "assignment_id": "assignment_uuid_here",
+      "lat": -37.8136,
+      "lng": 144.9631
+    }
+    ```
+*   **Response (200 OK)**:
+    ```json
+    { "id": "time_log_id", "clock_in_at": "2026-10-14T08:00:00Z", "status": "pending" }
+    ```
+
+**4. Clock Out**
+*   **Endpoint**: `POST /api/attendance/clock-out`
+*   **Description**: Finalizes the time log for an active shift using the worker's current GPS coordinates.
+*   **Request Body**:
+    ```json
+    {
+      "time_log_id": "time_log_uuid_here",
+      "lat": -37.8136,
+      "lng": 144.9631
+    }
+    ```
+*   **Response (200 OK)**:
+    ```json
+    { "id": "time_log_id", "clock_out_at": "2026-10-14T16:00:00Z", "status": "approved" }
+    ```

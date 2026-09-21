@@ -615,7 +615,7 @@ export function generateInvoicePDFBuffer(invoice: any): Promise<Buffer> {
       doc.font('Helvetica-Bold').fontSize(9).fill(DARK)
         .text('Amount due', totLabelX, y + 2, { width: 80, align: 'right' });
       doc.font('Helvetica-Bold').fontSize(16).fill(DARK)
-        .text(`$${invoice.total.toFixed(2)}`, totValueX - 20, y - 2, { width: totValueW + 20, align: 'right' });
+        .text(`$${invoice.total.toFixed(2)}`, totValueX - 80, y - 2, { width: totValueW + 80, align: 'right' });
       y += 30;
 
       // ═══════════════════════════════════════════════════════════
