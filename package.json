@@ -7,9 +7,11 @@
     "dev:server": "ts-node-dev --respawn --transpile-only server/src/index.ts",
     "dev:client": "vite",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "build": "tsc && vite build",
+    "build": "prisma generate && tsc -p tsconfig.server.json && vite build",
+    "start": "node dist/server/src/index.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "ts-node prisma/seed.ts",
     "test": "vitest run"
   },

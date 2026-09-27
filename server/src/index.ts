@@ -42,6 +42,16 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'Staffing Agency Management Monolith', timestamp: new Date() });
 });
 
+// In production, serve the built React frontend from dist/
+if (process.env.NODE_ENV === 'production') {
+  const clientBuildPath = path.join(__dirname, '..', '..', '..', 'dist');
+  app.use(express.static(clientBuildPath));
+  // Catch-all: return index.html for client-side routes
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
+  });
+}
+
 // Multer error handler
 app.use((err: any, req: any, res: any, next: any) => {
   if (err?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'File too large. Max 20 MB.' });
