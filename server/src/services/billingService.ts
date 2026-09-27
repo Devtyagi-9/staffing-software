@@ -605,6 +605,15 @@ export function generateInvoicePDFBuffer(invoice: any): Promise<Buffer> {
         .text(invoice.subtotal.toFixed(2), totValueX, y, { width: totValueW, align: 'right' });
       y += 18;
 
+      // GST line (only if tax applies)
+      if (invoice.tax_amount > 0) {
+        doc.font('Helvetica').fontSize(9).fill(MUTED)
+          .text('GST (10%)', totLabelX, y, { width: 80, align: 'right' });
+        doc.font('Helvetica').fill(DARK)
+          .text(invoice.tax_amount.toFixed(2), totValueX, y, { width: totValueW, align: 'right' });
+        y += 18;
+      }
+
       // Total
       doc.font('Helvetica-Bold').fontSize(9).fill(DARK)
         .text('Total', totLabelX, y, { width: 80, align: 'right' });
