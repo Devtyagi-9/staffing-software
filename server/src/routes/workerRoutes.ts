@@ -47,16 +47,32 @@ router.get('/', authenticateJWT, async (req: AuthenticatedRequest, res: Response
 });
 
 /* ─── Get Authenticated Worker's Shifts (Mobile App) ─────────────── */
+// Query params:
+//   ?type=upcoming  → only shifts starting at or after now (default)
+//   ?type=past      → only shifts that have already started
+//   ?type=all       → all confirmed shifts
 router.get('/my-shifts', authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   const workerId = req.user?.linked_worker_id;
   if (!workerId) {
     return res.status(403).json({ error: 'User is not linked to a worker profile.' });
   }
 
+  const type = (req.query.type as string) || 'upcoming';
+  const now = new Date();
+
+  const shiftDateFilter: any = {};
+  if (type === 'upcoming') {
+    shiftDateFilter.scheduled_start = { gte: now };
+  } else if (type === 'past') {
+    shiftDateFilter.scheduled_start = { lt: now };
+  }
+  // 'all' → no date filter
+
   const assignments = await prisma.assignment.findMany({
     where: {
       worker_id: workerId,
       status: 'confirmed',
+      shift: Object.keys(shiftDateFilter).length > 0 ? shiftDateFilter : undefined,
     },
     include: {
       shift: {
@@ -71,18 +87,23 @@ router.get('/my-shifts', authenticateJWT, async (req: AuthenticatedRequest, res:
     },
     orderBy: {
       shift: {
-        scheduled_start: 'asc',
+        // Upcoming: soonest first; Past: most recent first
+        scheduled_start: type === 'past' ? 'desc' : 'asc',
       },
     },
   });
 
-  // Extract shift format expected by the app
   const shifts = assignments.map(a => ({
     id: a.shift.id,
     assignment_id: a.id,
     scheduled_start: a.shift.scheduled_start,
     scheduled_end: a.shift.scheduled_end,
-    status: a.status,
+    // assignment status (always 'confirmed' here)
+    assignment_status: a.status,
+    // shift-level status: 'open' | 'confirmed' | 'completed' | 'cancelled'
+    shift_status: a.shift.status,
+    // convenience flag for the app
+    is_upcoming: new Date(a.shift.scheduled_start) >= now,
     client_requirement: {
       client: {
         name: a.shift.client_requirement.client.name,
@@ -93,7 +114,7 @@ router.get('/my-shifts', authenticateJWT, async (req: AuthenticatedRequest, res:
     },
   }));
 
-  res.json(shifts);
+  res.json({ type, shifts });
 });
 
 /* ─── Get Single Worker (full profile) ───────────────────────────── */
