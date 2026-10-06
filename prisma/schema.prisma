@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model Agency {
@@ -461,6 +461,7 @@ model User {
   password_hash    String
   role             String   @default("coordinator") // admin, coordinator, worker, payer_readonly
   linked_worker_id String?  @unique
+  push_token       String?  // Expo Push Notification token for mobile device
   created_at       DateTime @default(now())
 
   agency              Agency              @relation(fields: [agency_id], references: [id], onDelete: Cascade)

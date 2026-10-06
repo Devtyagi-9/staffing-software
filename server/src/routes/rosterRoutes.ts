@@ -2,8 +2,18 @@ import { Router, Response } from 'express';
 import { prisma } from '../db';
 import { authenticateJWT, AuthenticatedRequest } from '../middleware/auth';
 import { recordAuditLog } from '../services/auditLogger';
+import { sendPushNotification, sendBatchPushNotifications } from '../services/notificationService';
 
 const router = Router();
+
+// Helper: look up the Expo push token for a worker (via their linked User record)
+async function getWorkerPushToken(workerId: string): Promise<string | null> {
+  const user = await prisma.user.findFirst({
+    where: { linked_worker_id: workerId },
+    select: { push_token: true },
+  });
+  return user?.push_token ?? null;
+}
 
 // GET Roster Shifts for Calendar View
 router.get('/shifts', authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
@@ -140,6 +150,20 @@ router.post('/assign', authenticateJWT, async (req: AuthenticatedRequest, res: R
     after: { shift_id, worker_id, status: 'confirmed', has_overlap_warning: isOverlapping },
   });
 
+  // 🔔 Push notification: inform the worker of their new shift
+  const pushToken = await getWorkerPushToken(worker_id);
+  if (pushToken) {
+    const shiftDate = new Date(shift.scheduled_start).toLocaleDateString('en-AU', {
+      weekday: 'short', day: 'numeric', month: 'short',
+    });
+    const shiftTime = `${new Date(shift.scheduled_start).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true })} – ${new Date(shift.scheduled_end).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+    await sendPushNotification(pushToken, {
+      title: '📅 New Shift Assigned',
+      body: `You have a new shift on ${shiftDate} from ${shiftTime}.`,
+      data: { type: 'NEW_SHIFT', shift_id, assignment_id: assignment.id },
+    });
+  }
+
   res.json({
     assignment,
     has_conflict_warning: isOverlapping,
@@ -163,6 +187,27 @@ router.delete('/shifts/:id', authenticateJWT, async (req: AuthenticatedRequest, 
 
   if (!shift) {
     return res.status(404).json({ error: 'Shift not found or access denied.' });
+  }
+
+  // 🔔 Push notification: warn all assigned workers before deleting
+  const assignedWorkerIds = shift.assignments
+    .filter((a) => a.status === 'confirmed')
+    .map((a) => a.worker_id);
+
+  if (assignedWorkerIds.length > 0) {
+    const assignedUsers = await prisma.user.findMany({
+      where: { linked_worker_id: { in: assignedWorkerIds } },
+      select: { push_token: true },
+    });
+    const tokens = assignedUsers.map((u) => u.push_token);
+    const shiftDate = new Date(shift.scheduled_start).toLocaleDateString('en-AU', {
+      weekday: 'short', day: 'numeric', month: 'short',
+    });
+    await sendBatchPushNotifications(tokens, {
+      title: '❌ Shift Cancelled',
+      body: `Your shift on ${shiftDate} has been cancelled. Please check the app for updates.`,
+      data: { type: 'SHIFT_CANCELLED', shift_id: id },
+    });
   }
 
   // Cancel all assignments first (cascade would also handle this, but we log it)
@@ -305,6 +350,23 @@ router.post('/shifts', authenticateJWT, async (req: AuthenticatedRequest, res: R
         data: { shift_id: shift.id, worker_id, status: 'confirmed', assigned_by: req.user!.id },
       });
       await prisma.shift.update({ where: { id: shift.id }, data: { status: 'confirmed' } });
+
+      // 🔔 Push notification: inform worker of pre-assigned shift
+      if (w === 0) {
+        // Only notify on first week to avoid spamming recurring bulk creates
+        const pushToken = await getWorkerPushToken(worker_id);
+        if (pushToken) {
+          const shiftDate = iterStart.toLocaleDateString('en-AU', {
+            weekday: 'short', day: 'numeric', month: 'short',
+          });
+          const shiftTime = `${iterStart.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true })} – ${iterEnd.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+          await sendPushNotification(pushToken, {
+            title: '📅 New Shift Assigned',
+            body: `You have a new shift on ${shiftDate} from ${shiftTime}${weeks > 1 ? ` (+ ${weeks - 1} recurring week${weeks > 2 ? 's' : ''})` : ''}.`,
+            data: { type: 'NEW_SHIFT', shift_id: shift.id, assignment_id: assignment.id, total_weeks: weeks },
+          });
+        }
+      }
     }
 
     await recordAuditLog({

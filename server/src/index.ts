@@ -12,6 +12,7 @@ import attendanceRoutes from './routes/attendanceRoutes';
 import billingRoutes from './routes/billingRoutes';
 import matchingRoutes from './routes/matchingRoutes';
 import configRoutes from './routes/configRoutes';
+import notificationRoutes from './routes/notificationRoutes';
 import { prisma } from './db';
 import { UPLOADS_DIR } from './middleware/upload';
 
@@ -37,6 +38,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/matching', matchingRoutes);
 app.use('/api/config', configRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'Staffing Agency Management Monolith', timestamp: new Date() });
